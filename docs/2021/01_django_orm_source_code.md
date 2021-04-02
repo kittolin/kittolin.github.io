@@ -37,7 +37,7 @@ type("Hello", (object,),  dict(hello=lambda x: x))
 
 Python 解析器在遇到 class 定义时是调用 type 函数动态创建类的，所以两种写法本质是一样的。
 
-class 定义类时可以传递 metaclass 设置，Python 解析器会将当前要创建的类传递到元类的 __new__ 方法中。
+class 定义类时可以传递 metaclass 设置，Python 解析器会将当前要创建的类传递到元类的 `__new__` 方法中。
 ```py
 class Hello(metaclass=HelloMetaclass):
     pass
@@ -57,63 +57,37 @@ backends 模块提供多数据库的支持，用于不同数据库的 SQL 差异
 
 models 模块提供 Python 对象到数据库概念的映射和互相转换，这部分是核心代码。
 
+```
 ├── backends
-
 │   ├── base
-
 │   ├── dummy                   哑后端，什么都不做，定义空方法
-
 │   ├── mysql                   Mysql 后端实现
-
 │   ├── oracle                  Oracle 后端实现
-
 │   ├── postgresql
-
 │   ├── postgresql_psycopg2
-
 │   ├── sqlite3
-
 ├── migrations                  猜测是通过 Model 迁移生成数据表的相关代码
-
 ├── models
-
 │   ├── fields
-
 │   │   ├── __init__.py         数据库字段的封装类 Field 及其子类（重点）
-
 │   │   ├── files.py            文件相关字段类
-
 │   ├── functions
-
 │   ├── sql
-
 │   │   ├── compiler.py         SQL 编译器类，用于拼接生成 SQL 语句（重点）
-
 │   │   ├── query.py            Select SQL 语句的封装类 Query（重点）
-
 │   │   ├── subqueries.py       增删改 SQL 语句的封装类，比如：DeleteQuery，UpdateQuery，InsertQuery
-
 │   ├── aggregates.py           聚合函数，比如 Sum，Count，Min，Avg
-
 │   ├── base.py                 Model 类和 ModelBase 元类（重点）
-
 │   ├── deletion.py             外键删除的级联操作，比如 CASCADE，SET_NULL，DO_NOTHING
-
 │   ├── expressions.py          SQL 表达式相关类，比如 CASE，WHEN，ORDER_BY
-
 │   ├── indexes.py              索引类
-
 │   ├── manager.py              Model 管理类，比如：Manager 类和 BaseManager 类（重点）
-
 │   ├── options.py              Model 类的 meta 元信息封装
-
 │   ├── query.py                QuerySet 的主要实现，提供 ORM 的 公共 API 接口（重点） 
-
 │   ├── signals.py              Model 的信号量
-
 ├── transaction.py              事务管理相关
-
-|── utils.py                    工具类代码，主要包括数据库连接和路由管理
+├── utils.py                    工具类代码，主要包括数据库连接和路由管理
+```
 
 ## 最重要的几个类及其交互
 
@@ -201,9 +175,9 @@ class ModelBase(type):
 
 ModelBase 是所有 Model 类（包括用户自定义的）的元类。
 
-Django 在启动时会依次遍历每个 app，加载 app 的 model.py 模块下的 Model 类，然后调用 ModelBase 的 __new__ 方法对每个 Model 类进行动态创建和初始化。
+Django 在启动时会依次遍历每个 app，加载 app 的 model.py 模块下的 Model 类，然后调用 ModelBase 的 `__new__` 方法对每个 Model 类进行动态创建和初始化。
 
-__new__ 方法做的工作主要有：设置 _meta 属性，设置各种属性方法到 Model 类中，调用 _prepare 方法确保每个 Model 类至少绑定有一个 Manager（默认命名为 objects）。
+`__new__` 方法做的工作主要有：设置 _meta 属性，设置各种属性方法到 Model 类中，调用 _prepare 方法确保每个 Model 类至少绑定有一个 Manager（默认命名为 objects）。
 
 ### Model
 
@@ -303,7 +277,7 @@ class Field(RegisterLookupMixin):
                     partialmethod(cls._get_FIELD_display, field=self))
 ```
 
-models/fields/__init__.py 模块中定义了多种不同数据类型的 Field 子类，该模块的 __all__ 列出了 Model 类中支持的所有数据类型。
+`models/fields/__init__.py` 模块中定义了多种不同数据类型的 Field 子类，该模块的 `__all__` 列出了 Model 类中支持的所有数据类型。
 
 ### Manager
 
@@ -557,7 +531,7 @@ class Query:
         return connection.ops.compiler(self.compiler)(self, connection, using)
 ```
 
-通过 Query 类的 __init__ 构造方法可以分析，Query 其实是 Select 语句的对象封装，封装了 Select 语句的诸如 select，where，join，group_by 等等信息。
+通过 Query 类的 `__init__`构造方法可以分析，Query 其实是 Select 语句的对象封装，封装了 Select 语句的诸如 select，where，join，group_by 等等信息。
 
 在 models/sql/subqueries.py 模块下还定义有 DeleteQuery、UpdateQuery、InsertQuery 和 AggregateQuery，都继承自 Query 类，分别是 Delete、Update、Insert 和包含聚合功能的 Select 语句的对象封装。
 
@@ -607,12 +581,12 @@ class SQLCompiler:
 
 比如定义 User 类继承自 Model，执行 list(User.objects.filter(id=1))
 
-1. 调用 ModelBase 的 __new__ 方法动态创建 User 类，封装 _meta 指向 Option 对象，封装各种 Field 字段
+1. 调用 ModelBase 的 `__new__` 方法动态创建 User 类，封装 _meta 指向 Option 对象，封装各种 Field 字段
 2. 如果 User 类没有自定义管理器的话，封装 objects 指向 Manager 包装对象 ManagerDescriptor，Manager 从 QuerySet 继承公共 API 方法，当然也包括 filter
 3. 调用 Manager 的 filter 方法，即 QuerySet 的 filter 方法
 4. 调用 Query 的 add_q 方法添加查询条件
-5. list(QuerySet) 调用 QuerySet 的 __iter__ 方法，接着调用 _fetch_all 方法
-6. 调用 ModelIterable 的 __iter__ 方法，获取 SQL 编译器
+5. list(QuerySet) 调用 QuerySet 的 `__iter__` 方法，接着调用 `_fetch_all` 方法
+6. 调用 ModelIterable 的 `__iter__` 方法，获取 SQL 编译器
 7. SQL 编译器生成并执行 SQL
 8. QuerySet 对结果数据进行 to_python 转换，封装成 User 对象列表。
 
@@ -679,7 +653,7 @@ class ConnectionRouter:
 
 我们知道，QuerySet 是惰性计算的，最终的 SQL 执行其实都是通过 ModelIterable 类进行的。
 
-所以回看 ModelIterable 的 __iter__ 方法，可以看到 QuerySet 的 db 属性(即配置文件的数据库别名)通过 Query 对象一直传递到了编译器中。
+所以回看 ModelIterable 的 `__iter__` 方法，可以看到 QuerySet 的 db 属性(即配置文件的数据库别名)通过 Query 对象一直传递到了编译器中。
 
 但是在 QuerySet 类的源码中却找不到任何地方有设置 db 属性的，所以我的猜测是：QuerySet 的所有 API 方法都会被复制到 Manager 类中(回看 BaseManager 的 _get_queryset_methods 方法)，所以 QuerySet 的 API 调用都是通过 Manager 这个代理来进行的，db 属性应该定义是在 Manager 类中。
 
