@@ -1,4 +1,3 @@
-# Django ORM 源码浅析
 
 Django 是一个由 Python 写成的开源的重量级的 Web 应用框架，采用 MVT 的软件设计模式，即模型（Model），视图（View）和模板（Template）。
 
@@ -107,7 +106,7 @@ models 模块下有以下这些重要的类用于封装数据库概念和相关�
 - BaseManagerFromQuerySet 是 BaseManager 的 from_queryset 方法动态创建的类，代码里并没有 class 定义
 - Query 的 compiler 属性指向的是字符串 "SQLComplier"，图里简单理解为聚合了 SQLComplier 对象
 
-![Django ORM 类图](/images/2021/01_django_orm_source_code/django_orm_class_diagram.png)
+<img src="../../images/2021/01_django_orm_source_code/django_orm_class_diagram.png" width="600">
 
 接下来通过代码分析每个类具体是干什么的。因为很多类的代码量都比较多，所以只列出了重点的属性和方法，对于比较长的方法，只列出了重点代码行并做注释，其余代码行用 ...... 表示忽略。代码注释中的 Model 类一般指的用户自定义的 Model 类。每个类会给出具体模块路径和代码行，方便快速定位代码。
 
