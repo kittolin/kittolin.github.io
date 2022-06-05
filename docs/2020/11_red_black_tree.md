@@ -1,3 +1,4 @@
+# 红黑树及简单代码实现
 
 红黑树是一种常见的自平衡二叉查找树，常用于实现关联数组、字典等，在各种编程语言的数据结构底层实现中被广泛使用。
 
@@ -131,117 +132,117 @@ AVL 树中添加节点和删除节点可能需要从下往上进⾏⼀次或多�
 ```java
 // Map 集合的 key ⼀定要具有可⽐较性
 public class RedBlackTree<K extends Comparable<K>, V> {
-    private static final boolean RED = true;
-    private static final boolean BLACK = false;
+    private static final boolean RED = true;
+    private static final boolean BLACK = false;
 
-    private class Node {
-        public K key;
-        public V value;
-        public Node left, right;
-        public boolean color;
-        public Node(K key, V value) {
-            this.key = key;
-            this.value = value;
-            left = right = null;
-            color = RED;  // 添加的新节点都是红⾊的
-        }
-    }
+    private class Node {
+        public K key;
+        public V value;
+        public Node left, right;
+        public boolean color;
+        public Node(K key, V value) {
+            this.key = key;
+            this.value = value;
+            left = right = null;
+            color = RED;    // 添加的新节点都是红⾊的
+        }
+    }
 
     private Node root;
-    private int size;
+    private int size;
 
-    // 平均时间复杂度: O(log n)
-    // 最坏时间复杂度: O(log n)
-    public void add(K key, V value) {
-        if (key == null) {
-            throw new IllegalArgumentException("Key mustn't be null.");
-        }
-        root = add(root, key, value);
-        root.color = BLACK;  // 根节点⼀定是⿊⾊的
-    }
+    // 平均时间复杂度: O(log n)
+    // 最坏时间复杂度: O(log n)
+    public void add(K key, V value) {
+        if (key == null) {
+            throw new IllegalArgumentException("Key mustn't be null.");
+        }
+        root = add(root, key, value);
+        root.color = BLACK; // 根节点⼀定是⿊⾊的
+    }
 
-    // 递归过程，以 node 为根节点的⼦树添加键值对，返回添加后的新的⼦树根节点
-    private Node add(Node node, K key, V value) {
-        // 递归结束条件，也是真正添加新节点的地⽅，红⿊树的新节点⼀定是添加在空的位置
-        if (node == null) {
-            size ++;
-            return new Node(key, value);
-        }
+    // 递归过程，以 node 为根节点的⼦树添加键值对，返回添加后的新的⼦树根节点
+    private Node add(Node node, K key, V value) {
+        // 递归结束条件，也是真正添加新节点的地⽅，红⿊树的新节点⼀定是添加在空的位置
+        if (node == null) {
+            size ++;
+            return new Node(key, value);
+        }
 
-        // 常规的⼆分搜索树添加新节点的过程
-        // 区别在于红⿊树可能会因为旋转操作导致⼦树的根节点变化，所以需要调整左右指针指向
-        if (key.compareTo(node.key) < 0) {
-            node.left = add(node.left, key, value);
-        } else if (key.compareTo(node.key) > 0) {
-            node.right = add(node.right, key, value);
-        } else {
-            node.value = value;
-        }
+        // 常规的⼆分搜索树添加新节点的过程
+        // 区别在于红⿊树可能会因为旋转操作导致⼦树的根节点变化，所以需要调整左右指针指向
+        if (key.compareTo(node.key) < 0) {
+            node.left = add(node.left, key, value);
+        } else if (key.compareTo(node.key) > 0) {
+            node.right = add(node.right, key, value);
+        } else {
+            node.value = value;
+        }
 
-        // 旋转和变⾊等操作维持红⿊树的平衡
-        // 注意不能⽤ elseif，因为在⼀次递归过程中可能需要进⾏多种操作
-        if (isRed(node.right) && !isRed(node.left)) {
-            node = leftRotate(node);
-        }
-        if (isRed(node.left) && isRed(node.left.left)) {
-            node = rightRotate(node);
-        }
-        if (isRed(node.left) && isRed(node.right)) {
-            flipColors(node);
-        }
+        // 旋转和变⾊等操作维持红⿊树的平衡
+        // 注意不能⽤ elseif，因为在⼀次递归过程中可能需要进⾏多种操作
+        if (isRed(node.right) && !isRed(node.left)) {
+            node = leftRotate(node);
+        }
+        if (isRed(node.left) && isRed(node.left.left)) {
+            node = rightRotate(node);
+        }
+        if (isRed(node.left) && isRed(node.right)) {
+            flipColors(node);
+        }
 
-        return node;
-    }
+        return node;
+    }
 
-    private boolean isRed(Node node) {
-        // 叶⼦节点是⿊⾊的 nil 节点
-        if (node == null) {
-            return false;
-        }
-        return node.color == RED;
-    }
+    private boolean isRed(Node node) {
+        // 叶⼦节点是⿊⾊的 nil 节点
+        if (node == null) {
+            return false;
+        }
+        return node.color == RED;
+    }
 
-    /**
+    /*
      *   node                             x
      *  /   \     leftRotate            /  \
      * T1   x   -------------->      node  T3
      *     / \                      /   \
      *    T2 T3                    T1   T2
      */
-    private Node leftRotate(Node node) {
-        Node x = node.right;
-        node.right = x.left;
-        x.left = node;
+    private Node leftRotate(Node node) {
+        Node x = node.right;
+        node.right = x.left;
+        x.left = node;
         x.color = node.color;
-        node.color = RED;
-        return x;
-    }
+        node.color = RED;
+        return x;
+    }
 
-    /**
+    /*
      *     node                         x
      *    /   \     rightRotate       /  \
      *   x    T2  -------------->   y   node
      *  / \                             /  \
      * y  T1                           T1  T2
      */
-    private Node rightRotate(Node node) {
-        Node x = node.left;
-        node.left = x.right;
-        x.right = node;
-        x.color = node.color;
-        node.color = RED;
-        return x;
-    }
+    private Node rightRotate(Node node) {
+        Node x = node.left;
+        node.left = x.right;
+        x.right = node;
+        x.color = node.color;
+        node.color = RED;
+        return x;
+    }
 
-    /*
+    /*
      *    b                   r   
      *   /  \   --------->   /  \
      *  r    r              b    b
      */
-    private void flipColors(Node node) {
-        node.color = RED;
-        node.left.color = BLACK;
-        node.right.color = BLACK;
-    }
+    private void flipColors(Node node) {
+        node.color = RED;
+        node.left.color = BLACK;
+        node.right.color = BLACK;
+    }
 }
 ```
