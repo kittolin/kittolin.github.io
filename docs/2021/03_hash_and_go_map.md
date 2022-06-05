@@ -185,15 +185,17 @@ hmap 结构体表⽰整个哈希表结构，主要的属性如下：
 ```go
 // A header for a Go map.
 type hmap struct {
-    count     int             // 键值对个数
-    flags     uint8
-    B         uint8           // 哈希表数组的⻓度为 2^B，B 就是上⾯所讲的 n，可以通过位运算替代求余运算
-    noverflow uint16
-    hash0     uint32
-    buckets    unsafe.Pointer // 指向 bucket 数组
-    oldbuckets unsafe.Pointer // 指向扩容前的原 bucket 数组，⽤于延迟扩容，后⾯会讲
-    nevacuate  uintptr
-    extra *mapextra
+	count     int               // 键值对个数
+	flags     uint8
+	B         uint8             // 哈希表数组的⻓度为 2^B，B 就是上⾯所讲的 n，可以通过位运算替代求余运算
+	noverflow uint16
+	hash0     uint32
+
+	buckets    unsafe.Pointer   // 指向 bucket 数组
+	oldbuckets unsafe.Pointer   // 指向扩容前的原 bucket 数组，⽤于延迟扩容，后⾯会讲
+	nevacuate  uintptr
+
+	extra *mapextra
 }
 ```
 
@@ -212,21 +214,21 @@ kv 的存储结构和 overflow 指针，在 bmap 结构体中并没有显式定�
 ```go
 // A bucket for a Go map.
 type bmap struct {
-    // tophash generally contains the top byte of the hash value
-    // for each key in this bucket. If tophash[0] < minTopHash,
-    // tophash[0] is a bucket evacuation state instead.
-    tophash [bucketCnt]uint8
-    // Followed by bucketCnt keys and then bucketCnt elems.
-    // NOTE: packing all the keys together and then all the elems together makes the
-    // code a bit more complicated than alternating key/elem/key/elem/... but it allows
-    // us to eliminate padding which would be needed for, e.g., map[int64]int8.
-    // Followed by an overflow pointer.
+	// tophash generally contains the top byte of the hash value
+	// for each key in this bucket. If tophash[0] < minTopHash,
+	// tophash[0] is a bucket evacuation state instead.
+	tophash [bucketCnt]uint8
+	// Followed by bucketCnt keys and then bucketCnt elems.
+	// NOTE: packing all the keys together and then all the elems together makes the
+	// code a bit more complicated than alternating key/elem/key/elem/... but it allows
+	// us to eliminate padding which would be needed for, e.g., map[int64]int8.
+	// Followed by an overflow pointer.
 }
 ```
 
 ⽤⼀张图来表⽰ hmap 和 bmap 的结构：
 
-<img src="../../images/2021/03_hash_and_go_map/go_map_diagram.png" width="500">
+<img src="../../images/2021/03_hash_and_go_map/go_map_diagram.png" width="600">
 
 ### 哈希算法
 map 的增删改查过程⼤致类似，都是将 key 通过哈希算法算出具体应该存储的 bucket。假设 B=4，数组的初始⼤⼩为 2^4=16，map 的哈希算法过程如下：
