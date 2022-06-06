@@ -31,7 +31,7 @@ CSRF 造成的问题包括：个⼈隐私泄露以及财产安全等。
 ```
 
 - POST类型，例如⾃动提交表单发起 POST 请求
-```html
+```
 <html>
     <form action="https://www.bank.com/withdraw" method=POST id="csrf-form">
         <input type="hidden" name="from" value="kittolin" />
@@ -149,17 +149,16 @@ Django 是采⽤中间件机制来实现 CSRF 的防御的，简单地说就是�
 
 下⾯基于 Django 2.0.2 简单分析 CSRF 中间件的实现原理，更多代码细节可以看 github 上 [Django CSRF 源码](https://github.com/django/django/blob/2.0.2/django/middleware/csrf.py)。
 
-⾸先来看这个模块下内置的各个⽅法函数的作⽤：
-
-### _get_failure_view()
+### 模块内置的函数
+#### _get_failure_view()
 获取 CSRF 校验失败后返回给前端浏览器的错误⻚⾯视图，可以通过配置⽂件的 CSRF_FAILURE_VIEW ⾃定义视图。
 
 默认视图是 "django.views.csrf.csrf_failure"，返回 403 Forbidden ⻚⾯。
 
-### _get_new_csrf_string()
+#### _get_new_csrf_string()
 获取 32 位的只包含⼤⼩写字⺟和数字的随机字符串，⽤于后续⽣成 32 位的 CSRF secret 和 32 位的 salt。
 
-### _salt_cipher_secret(secret)
+#### _salt_cipher_secret(secret)
 对 32 位的 CSRF secret 加盐，⽣成 64 位的 CSRF token。
 
 假设传⼊的 32 位的 secret 为 "2vhAyHRN0torNQN8HTkEfcMUh8eb9QrU"，加盐算法过程如下：
@@ -170,15 +169,15 @@ Django 是采⽤中间件机制来实现 CSRF 的防御的，简单地说就是�
 4. 以此类推，32 位的 secret 和 32 位的 salt 按上⾯的算法⽣成 32 位的 cipher: "RiOJNilsYmRUAtTpVHJllqFCwqCjpHmS"；
 5. 最后 32 位的 salt 连接上 32 位的 cipher 即⽣成 64 位的 token。
 
-### _unsalt_cipher_token(token)
+#### _unsalt_cipher_token(token)
 对 64 位的 CSRF token 去盐，解密得到 32 位的 CSRF secret。
 
 去盐算法过程为: 传⼊ 64 位的 token，拆分成两部分，32 位的 salt 和 32 位的 cipher，cipher 和 salt ⽤上⾯加盐算法的逆过程解密，得到 32 位的 secret。
 
-### _get_new_csrf_token()
+#### _get_new_csrf_token()
 ⽤上⾯的 _salt_cipher_secret 加盐算法，⽣成一个新的 64 位的随机 token。
 
-### get_token(request)
+#### get_token(request)
 上⾯提到的 Django 模板：
 ```html
 {% raw %}
@@ -199,43 +198,42 @@ get_token 函数会对当前 request 对象中设置⼀个标志：CSRF_COOKIE_U
 
 这个标志会在后续的 process_response ⽅法中将 token 注⼊用户浏览器 Cookie 或存放到用户 Session 中。
 
-### rotate_token(request)
+#### rotate_token(request)
 Django 框架⾃带有注册登录模块，为了安全性考虑，在用户登录成功后会调⽤这个 rotate_token 函数，来刷新用户浏览器 CSRF Cookie 或用户 Session 的 CSRF token。
 
 rotate_token 函数只是在当前 request 对象中设置两个标志：CSRF_COOKIE_USED 和 csrf_cookie_needs_reset，在后续的 process_response ⽅法中会根据这些标志来刷新 token。
 
-### _sanitize_token(token)
+#### _sanitize_token(token)
 新版本 Django 中对 CSRF token 的要求是 64 位的只包含⼤⼩写字⺟和数字的随机字符串，这个函数会对不满⾜条件的 token 进⾏重新⽣成。
 
 旧版本 Django 中的 CSRF token 是 32 位的，新版本为了向下兼容，将这原先的 32 位的 token 当做 32 位的 secret 进⾏加盐，返回新的 64 位 token。
 
-### _compare_salted_tokens(request_csrf_token, csrf_token)
+#### _compare_salted_tokens(request_csrf_token, csrf_token)
 ⽤于判断两个 64 位的 CSRF token 是否匹配。判断前会分别对两个 token 进⾏去盐，得到两个 32 位的 secret，再判断这两个 secret 是否相等。
 
-### _accept(self, request)
+#### _accept(self, request)
 当 CSRF 校验通过后调⽤这个⽅法，放⾏执⾏ view 业务请求。
 
-### _reject(self, request, reason)
+#### _reject(self, request, reason)
 当 CSRF 校验失败后调⽤这个⽅法，直接返回给浏览器错误提⽰⻚⾯。
 
-### _get_token(self, request)
+#### _get_token(self, request)
 Django 可以通过配置⽂件的 CSRF_USE_SESSIONS 来配置 CSRF token 是存放于 Session 还是 Cookie 中，默认为 False，即存放于 Cookie 中。
 
 这个函数会根据 CSRF_USE_SESSIONS 的取值，去 Session 或 Cookie 中获取 CSRF token 返回。
 
 如果是存放于 Cookie 中的话，还会对旧版本的 32 位 token 进⾏清洗重新⽣成并设置 csrf_cookie_needs_reset 标志。
 
-### _set_token(self, request, response)
+#### _set_token(self, request, response)
 根据 CSRF_USE_SESSIONS 的取值，来往 Session 或 Cookie 中重新设置 CSRF token 值。
 
-再来看 CSRF 中间件的三个关键⽅法：
-
-### process_request
+### CSRF 中间件的三个关键⽅法
+#### process_request
 调⽤ _get_token ⽅法从用户 Session 或 Cookie 中获取 CSRF token，并赋值给当前 request 对象 META 属性的 CSRF_COOKIE 变量。
 
 这个 token 在后续的代码执⾏过程中会一直传递下去，使⽤这同⼀个 token 进⾏校验。
 
-### process_view
+#### process_view
 这个⽅法是真正进⾏ CSRF 校验的地⽅，根据校验结果来调⽤ _accept ⽅法放⾏请求或调⽤ _reject ⽅法拒绝请求跳转错误⻚⾯。
 
 校验过程⼤致如下：
@@ -248,7 +246,7 @@ Django 可以通过配置⽂件的 CSRF_USE_SESSIONS 来配置 CSRF token 是存
 6. 从请求参数或 HTTP ⾃定义头属性中获取请求 token，来和上⾯ process_request ⽅法获取到的 token 进⾏匹配是否⼀致，如果不⼀致则调⽤ _reject ⽅法拒绝请求，获取请求 token 后要进⾏清洗，保证调⽤ _compare_salted_tokens 进⾏匹配时传递的两个 token 都是 64 位的加盐的 token；
 7. 上⾯⼀系列的校验都通过后，调⽤ _accept ⽅法放⾏执⾏ view 业务请求。
 
-### process_response
+#### process_response
 执⾏完 view 业务请求后才会调⽤这个⽅法。
 
 该⽅法判断在当前的请求执⾏过程中是否有往 request 对象中设置 csrf_cookie_needs_reset=True 或 CSRF_COOKIE_USED=True 的标志。
