@@ -99,10 +99,12 @@ token 可以在用户成功登陆后⽣成并存放于服务器端 Session 中�
 在提交 form 表单请求时，会将请求参数中的 token 和当前用户 Session 中的 token 进⾏⽐对，来判定是否为⼀次合法的请求。
 
 ⽐如如下所示的 Django 模板，会请求服务器端⽣成 token 并嵌⼊当前 form 表单中。
-```py
+```html
+{% raw %}
 <form method="post">
     {% csrf_token %}
 </form>
+{% endraw %}
 ```
 
 #### token 存放于 Cookie 中
@@ -178,10 +180,12 @@ Django 是采⽤中间件机制来实现 CSRF 的防御的，简单地说就是�
 
 ### get_token(request)
 上⾯提到的 Django 模板：
-```py
+```html
+{% raw %}
 <form method="post">
     {% csrf_token %}
 </form>
+{% endraw %}
 ```
 
 最终渲染后的执⾏代码如下，会调⽤ get_token 请求⽣成新的 token 嵌⼊ form 表单中。
