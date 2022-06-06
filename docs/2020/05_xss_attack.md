@@ -54,9 +54,11 @@ def reflected_xss(request):
 ```
 
 ```html
+{% raw %}
 <body>
     <p>{{ query | safe }}</p>
 </body>
+{% endraw %}
 ```
 
 如果用户点击了如下 url，则 script 脚本会注⼊到模板中被浏览器解析执⾏。
@@ -78,9 +80,11 @@ def stored_xss(request, user_id):
 ```
 
 ```html
+{% raw %}
 <body>
     <p>{{ profile | safe }}</p>
 </body>
+{% endraw %}
 ```
 
 如果用户的 profile 被提交了 script 脚本代码的话，则会注⼊到模板中被浏览器解析执⾏。
@@ -109,7 +113,7 @@ def stored_xss(request, user_id):
 则 "url" div 块中将被插⼊如下代码，用户点击链接会执⾏ alert 脚本。
 
 ```html
-<a href='' onclick="alert('dom xss')" //'>>DOM XSS</a>
+<a href='' onclick="alert('dom xss')" //'>DOM XSS</a>
 ```
 
 ## XSS 实际利⽤
@@ -161,7 +165,9 @@ http://127.0.0.1/api/xss/reflected/?query=<img src="123" onerror="alert('reflect
 再如 `<a>` 标签的 href 属性，用户点击 `<a>` 标签将会执⾏脚本代码。
 
 ```html
+{% raw %}
 <a href="{{ redirect }}">链接</a>
+{% endraw %}
 ```
 
 ```
@@ -179,9 +185,11 @@ http://127.0.0.1/api/xss/reflected/?query=<script>eval(\u0061\u006c\u0065\u0072\
 如果⽹⻚中存在有如下代码，url 参数直接被变量引⽤：
 
 ```js
+{% raw %}
 <script>
     let a = '{{ query }}';
 </script>
+{% endraw %}
 ```
 
 那么可以通过以下链接实现脚本代码注⼊：
