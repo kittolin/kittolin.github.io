@@ -54,11 +54,9 @@ def reflected_xss(request):
 ```
 
 ```html
-{% raw %}
 <body>
-    <p>{{ query | safe }}</p>
+    <p>{% raw %}{{ query | safe }}{% endraw %}</p>
 </body>
-{% endraw %}
 ```
 
 如果用户点击了如下 url，则 script 脚本会注⼊到模板中被浏览器解析执⾏。
