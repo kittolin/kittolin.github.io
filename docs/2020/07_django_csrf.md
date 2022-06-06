@@ -31,6 +31,7 @@ CSRF 造成的问题包括：个⼈隐私泄露以及财产安全等。
 ```
 
 - POST类型，例如⾃动提交表单发起 POST 请求
+
 ```html
 <html>
     <form action="https://www.bank.com/withdraw" method=POST id="csrf-form">
@@ -40,11 +41,12 @@ CSRF 造成的问题包括：个⼈隐私泄露以及财产安全等。
     </form>
 </html>
 <script>
-    // document.getElementById("csrf-form").submit();   // 注释掉避免在浏览器显示时自动提交。。。
+    document.getElementById("csrf-form").submit();
 </script>
 ```
 
 - 链接类型，诱导用户点击发起 GET 请求
+
 ```html
 <a href="https://www.bank.com/withdraw?from=kittolin&to=hacker&amount=100" taget="_blank">想一夜暴富吗？<a/>
 ```
