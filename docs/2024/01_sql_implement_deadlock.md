@@ -27,6 +27,22 @@ server 层又包含多个组件，负责 SQL 的检查和解析，所有跨存�
 
 ## 事务隔离是如何实现的
 
+1、引言，ACID，隔离级别
+
+2、例子解释 可重复读
+
+3、undo log
+
+4、视图数组
+
+5、具体实现，例子
+
+https://xiaolincoding.com/mysql/transaction/mvcc.html
+https://tech.meituan.com/2014/08/20/innodb-lock.html
+
+undo log 如何实现
+数据每个版本的row_trx_id字段存储在哪
+
 ## update 语句背后都做了什么
 
 ## 死锁问题分析
