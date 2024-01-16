@@ -38,13 +38,18 @@ server 层又包含多个组件，负责 SQL 的检查和解析，所有跨存�
 5、具体实现，例子
 
 https://xiaolincoding.com/mysql/transaction/mvcc.html
-https://tech.meituan.com/2014/08/20/innodb-lock.html
 
+补充：
+聚簇索引记录中的两个隐藏列、两个演示可重复读和读提交的例子
+
+
+问题：
 undo log 如何实现
 数据每个版本的row_trx_id字段存储在哪
 
 ## update 语句背后都做了什么
 
 ## 死锁问题分析
+两阶段锁
 
 ## 参考资料
