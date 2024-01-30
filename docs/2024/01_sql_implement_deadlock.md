@@ -31,25 +31,54 @@ server 层又包含多个组件，负责 SQL 的检查和解析，所有跨存�
 
 2、例子解释 可重复读
 
+<img src="../../images/2024/01_sql_implement_deadlock/concurrency_t_sample.png" width="400">
+
+```sql
+select money from account where user_id = 1;
+```
+
+```sql
+update account set money = money + 100 where user_id = 1;
+```
+
 3、undo log
 
+<img src="../../images/2024/01_sql_implement_deadlock/mvcc_diagram.png" width="500">
+
 4、视图数组
+高水位
+当前系统里面已经创建过的事务 ID 的最大值加 1 记为高水位。
+而是创建 Read View 时当前数据库中应该给下一个事务的 id 值，也就是全局事务中最大的事务 id 值 + 1
 
 5、具体实现，例子
+
+<img src="../../images/2024/01_sql_implement_deadlock/view_arr_at_start.png" width="700">
+
+<img src="../../images/2024/01_sql_implement_deadlock/view_arr_after_commit.png" width="300">
+
+<img src="../../images/2024/01_sql_implement_deadlock/row_mvcc_sample.png" width="300">
+
+两个活跃：10、20
+C 30
+A 31
+B 32
+
+第一版 5
 
 https://xiaolincoding.com/mysql/transaction/mvcc.html
 
 补充：
 聚簇索引记录中的两个隐藏列、两个演示可重复读和读提交的例子
 
-
 问题：
 undo log 如何实现
-数据每个版本的row_trx_id字段存储在哪
+数据每个版本的 row_trx_id 字段存储在哪
+高水位是事务创建时确定的，还是一直变的
 
 ## update 语句背后都做了什么
 
 ## 死锁问题分析
+
 两阶段锁
 
 ## 参考资料
