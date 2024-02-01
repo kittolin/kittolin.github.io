@@ -86,22 +86,27 @@ u1 和 u2 记录的内容可以分别理解为： 将 300 改为 100，将 400 �
 
 从记录的当前版本出发，一直回溯到第一个可见的版本，就是当前事务应该看到的记录的版本。
 
-5、具体实现，例子
-https://xiaolincoding.com/mysql/transaction/mvcc.html#%E5%8F%AF%E9%87%8D%E5%A4%8D%E8%AF%BB%E6%98%AF%E5%A6%82%E4%BD%95%E5%B7%A5%E4%BD%9C%E7%9A%84
+我们还是用刚才演示可重复读的例子，利用可见性规则来分析下 S1、S2 和 S3 的取值。
+
+不妨假设事务 A、B、C 的事务 ID 分别为 31、32、30，有两个 ID 分别为 10、20 的活跃事务贯穿于整个期间，user_id = 1 的记录是由先前已提交的 ID 为 5 的事务创建的，则 A、B、C 的一致性视图如下所示：
 
 <img src="../../images/2024/01_sql_implement_deadlock/view_arr_at_start.png" width="700">
 
-<img src="../../images/2024/01_sql_implement_deadlock/view_arr_after_commit.png" width="300">
+在 S1 查询前，已经有了 U1 和 U2 两次变更，则 user_id = 1 的记录当前存在有三个版本了：
 
 <img src="../../images/2024/01_sql_implement_deadlock/row_mvcc_sample.png" width="300">
 
-两个活跃：10、20
-C 30
-A 31
-A2 33
-B 32
+S1 的取值分析过程如下：
+- 当前版本 money = 300，trx_id 位于事务 A 的高低水位间，且在 A 的数组中，符合规则 3，不可见，往前找
+- money = 200 的版本，trx_id 等于高水位，符合规则 2，不可见，继续往前找
+- money = 100 的版本，trx_id 小于低水位，符合规则 1，可见，故 S1 取值为 100
 
-第一版 5
+S2 的分析同 S1。S3 查询时，事务 A 已提交，S3 单次查询也是个新事务，假设新事务 ID 为 33，视图如下所示：
+
+<img src="../../images/2024/01_sql_implement_deadlock/view_arr_after_commit.png" width="300">
+
+S3 的取值分析过程如下：
+- 当前版本 money = 300，trx_id 位于事务 A2 的高低水位间，且不在 A2 的数组中，符合规则 4，可见，故 S3 取值为 300
 
 ## update 语句背后都做了什么
 
