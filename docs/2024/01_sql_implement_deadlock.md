@@ -112,6 +112,16 @@ S3 的取值分析过程如下：
 
 ## update 语句背后都做了什么
 
+1、引言
+2、redo log
+3、binlog
+4、对比
+5、buffer pool
+6、update 执行
+7、两阶段提交
+
+<img src="../../images/2024/01_sql_implement_deadlock/redo_log_curcle_write.png" width="300">
+
 主从
 
 binlog
