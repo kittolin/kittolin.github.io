@@ -122,6 +122,10 @@ S3 的取值分析过程如下：
 
 <img src="../../images/2024/01_sql_implement_deadlock/redo_log_curcle_write.png" width="300">
 
+<img src="../../images/2024/01_sql_implement_deadlock/binlog_to_disk.png" width="400">
+
+<img src="../../images/2024/01_sql_implement_deadlock/update_exc.png" width="300">
+
 主从
 
 binlog
