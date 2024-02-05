@@ -112,55 +112,43 @@ S3 的取值分析过程如下：
 
 ## update 语句背后都做了什么
 
-1、引言
-2、redo log
-3、binlog
-4、对比
-5、buffer pool
-6、update 执行
-7、两阶段提交
+再来看下 update 语句是如何执行的。每次 update 都要写磁盘吗？并不是的，这样性能太差了，根本支持不了高并发。要想理解 update 的执行流程，需要先了解下几个关键机制：redo log、binlog、buffer pool。
+
+### redo log
+
+redo log 是 InnoDB 引擎特有的日志，确保了数据库的持久性和一致性，主要用于 MySQL 的崩溃恢复。
+
+redo log 是物理日志，因为其是引擎内部日志，所以是没有 sql 语句和记录之类的概念的，记录的内容大致类似于 “在某数据页的某一偏移量上做了什么修改”。
+
+这里你可能有疑问了：数据文件保存在磁盘，日志文件也是保存在磁盘，同样是写磁盘，为什么不直接写数据文件，还要多此一举呢？
+
+比如执行如下 update 语句：
+```
+update account set money = money + 100 where user_id = 1;
+```
+如果是直接写数据文件，首先要读磁盘找到 user_id = 1 的记录，更新 money 字段后，再写回磁盘，属于随机读写；
+如果是写日志文件，不用关心记录的具体位置，只需在日志文件后面追加日志，属于顺序写，磁盘的顺序写性能远大于随机写。
+
+只要写了 redo log 日志，更新就算完成了；InnoDB 会在适当的时候将日志的变更刷新到磁盘的数据文件里去。
+
+redo log 由多个文件组成，写过程类似于循环队列的循环写，如下图所示：
+- write pos 表示当前日志接下来要写的位置
+- check pos 表示已刷新到磁盘的日志的位置
+- 图中绿色部分表示接下来日志可以写入的，黄色部分表示已写入但还未刷新到磁盘的
 
 <img src="../../images/2024/01_sql_implement_deadlock/redo_log_curcle_write.png" width="300">
 
+在具体实现上，日志是先写到 buffer 的，可配置相关参数，在事务提交时将 buffer 日志刷到磁盘去；
+此外，InnoDB 还有个后台线程，定时刷 buffer 到磁盘。
+
+### binlog
+主从
+redo log，对比
+binlog 写入机制
+一个事务的 binlog 是不能被拆开的，因此不论这个事务多大，也要确保一次性写入。每个线程有自己 binlog cache，但是共用同一份 binlog 文件。
+
 <img src="../../images/2024/01_sql_implement_deadlock/binlog_to_disk.png" width="400">
 
-<img src="../../images/2024/01_sql_implement_deadlock/update_exc.png" width="300">
-
-主从
-
-binlog
-
-redo log，对比
-
-三步走原因分析
-
-buffer pool
-
-
-
-redo log 循环写过程图，类似于循环队列
-
-sql 更新语句执行过程图：两阶段提交
-
-两阶段提交 原因分析：保证日志和数据的一致性，内存和磁盘数据一致，在写完第一个日志后，第二个日志还没有写完期间发生了 crash
-
-
-flush 刷脏页的时机
-* redo log 满了，此时系统会停止所有更新，推进 checkpoint 
-* 系统内存不足，若淘汰的是脏页 
-* 系统空闲时 
-* mysql 正常关闭 
-
-binlog 写入机制
-
-redo log 写入机制
-* 参数 innodb_flush_log_at_trx_commit 控制写入策略 
-* InnoDB 有个后台线程，每隔 1秒刷 redo log buffer 日志到磁盘 
-* 一个未提交事务的redo log，也有可能已持久化到磁盘的
-
-如果每一次的更新操作都需要写进磁盘，然后磁盘也要找到对应的那条记录，然后再更新，整个过程 IO 成本、查找成本都很高。
-具体来说，当有一条记录需要更新的时候，InnoDB 引擎就会先把记录写到 redo log（粉板）里面，并更新内存，这个时候更新就算完成了。
-同时，InnoDB 引擎会在适当的时候，将这个操作记录更新到磁盘里面
 
 redo log 是 InnoDB 引擎特有的；
 binlog 是 MySQL 的 Server 层实现的，所有引擎都可以使用。
@@ -168,6 +156,11 @@ redo log 是物理日志，记录的是“在某个数据页上做了什么修�
 binlog 是逻辑日志，记录的是这个语句的原始逻辑，比如“给 ID=2 这一行的 c 字段加 1 ”。
 redo log 是循环写的，空间固定会用完；
 binlog 是可以追加写入的。
+
+### buffer pool
+
+### 两阶段提交
+两阶段提交 原因分析：保证日志和数据的一致性，内存和磁盘数据一致，在写完第一个日志后，第二个日志还没有写完期间发生了 crash
 
 在 MySQL 重启后会按顺序扫描 redo log 文件，碰到处于 prepare 状态的 redo log，就拿着 redo log 中的 XID 去 binlog 查看是否存在此 XID：
 
@@ -178,11 +171,11 @@ b.  否则，回滚事务。
 
 得到的结论是：只要 redo log 和 binlog 保证持久化到磁盘，就能确保 MySQL 异常重启后，数据可以恢复。
 
-一个事务的 binlog 是不能被拆开的，因此不论这个事务多大，也要确保一次性写入。每个线程有自己 binlog cache，但是共用同一份 binlog 文件。
 
-图中的 write，指的就是指把日志写入到文件系统的 page cache，图中的 fsync，才是将数据持久化到磁盘的操作。
+<img src="../../images/2024/01_sql_implement_deadlock/update_exc.png" width="300">
 
-一个没有提交的事务的 redo log，也是可能已经持久化到磁盘的。
+
+
 
 
 ## 死锁问题分析
