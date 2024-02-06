@@ -112,7 +112,7 @@ S3 的取值分析过程如下：
 
 ## update 语句背后都做了什么
 
-再来看下 update 语句是如何执行的。每次 update 都要写磁盘吗？并不是的，这样性能太差了，根本支持不了高并发。要想理解 update 的执行流程，需要先了解下几个关键机制：redo log、binlog、buffer pool。
+再来看下 update 语句是如何执行的。每次 update 都要写磁盘吗？并不是的，这样性能太差了，根本支持不了高并发。要想理解 update 的执行流程，需要先了解下两个关键日志：redo log、binlog。
 
 ### redo log
 
@@ -123,7 +123,7 @@ redo log 是物理日志，因为其是引擎内部日志，所以是没有 sql 
 这里你可能有疑问了：数据文件保存在磁盘，日志文件也是保存在磁盘，同样是写磁盘，为什么不直接写数据文件，还要多此一举呢？
 
 比如执行如下 update 语句：
-```
+```sql
 update account set money = money + 100 where user_id = 1;
 ```
 如果是直接写数据文件，首先要读磁盘找到 user_id = 1 的记录，更新 money 字段后，再写回磁盘，属于随机读写；
@@ -142,41 +142,46 @@ redo log 由多个文件组成，写过程类似于循环队列的循环写，�
 此外，InnoDB 还有个后台线程，定时刷 buffer 到磁盘。
 
 ### binlog
-主从
-redo log，对比
-binlog 写入机制
-一个事务的 binlog 是不能被拆开的，因此不论这个事务多大，也要确保一次性写入。每个线程有自己 binlog cache，但是共用同一份 binlog 文件。
+
+binlog 是 Server 层实现的，故所有引擎都可以使用，用于记录数据库的所有增删改操作。只要日志齐全，就可以用其重放出一个完全一样的数据库。
+
+binlog 是逻辑日志，记录的是 sql 语句的原始逻辑，类似于 “给 user_id = 1 的记录的 money 字段加 100”。
+
+binlog 日志写磁盘的过程如下图所示：
+- 为了保证事务日志的原子性，每个线程都有其单独的 cache，在事务提交时，用 write 系统调用一次性刷到 page cache 去
+- 至于何时如何调用 fsync 写到磁盘，可通过 sync_binlog 参数配置
 
 <img src="../../images/2024/01_sql_implement_deadlock/binlog_to_disk.png" width="400">
 
+binlog 和 redo log 的对比如下：
 
-redo log 是 InnoDB 引擎特有的；
-binlog 是 MySQL 的 Server 层实现的，所有引擎都可以使用。
-redo log 是物理日志，记录的是“在某个数据页上做了什么修改”；
-binlog 是逻辑日志，记录的是这个语句的原始逻辑，比如“给 ID=2 这一行的 c 字段加 1 ”。
-redo log 是循环写的，空间固定会用完；
-binlog 是可以追加写入的。
-
-### buffer pool
+|       | redo log | binlog |
+| ---   | -------- | ------ |
+| 实现层 | InnoDB | Server |
+| 日志类型 | 物理日志 | 逻辑日志 |
+| 写机制 | 循环写 | 追加写 |
+| 用途 | 故障恢复 | 主从复制、备份还原 |
 
 ### 两阶段提交
-两阶段提交 原因分析：保证日志和数据的一致性，内存和磁盘数据一致，在写完第一个日志后，第二个日志还没有写完期间发生了 crash
 
-在 MySQL 重启后会按顺序扫描 redo log 文件，碰到处于 prepare 状态的 redo log，就拿着 redo log 中的 XID 去 binlog 查看是否存在此 XID：
+update 语句主要做了三件事：更新 buffer pool，写 redo log，写 binlog。
 
-如果 redo log 里面的事务是完整的，也就是已经有了 commit 标识，则直接提交；
-如果 redo log 里面的事务只有完整的 prepare，则判断对应的事务 binlog 是否存在并完整：
-a.  如果是，则提交事务；
-b.  否则，回滚事务。
+由于 redo log 和 binlog 是两个独立的逻辑，为了保证日志和数据的一致性，MySQL 采用了两阶段提交机制，具体流程如下图所示：
 
-得到的结论是：只要 redo log 和 binlog 保证持久化到磁盘，就能确保 MySQL 异常重启后，数据可以恢复。
+<img src="../../images/2024/01_sql_implement_deadlock/update_sql_exc.png" width="300">
 
+MySQL 重启后会去扫描 redo log 文件，分三种情况进行处理：
+- redo log 里面事务完整，即有 commit 标识，则直接提交（情况 1）
+- redo log 里面事务不完整，只有 prepare，则去判断对应的 binlog 是否完整存在
+  - 若是，则提交事务（情况 2）
+  - 否则，回滚事务（情况 3）
 
-<img src="../../images/2024/01_sql_implement_deadlock/update_exc.png" width="300">
+假设 MySQL 分别在 update 执行过程中的各个中间时间点崩溃了，来分析下重启后是如何进行恢复的。
+- t1 时崩溃，redo log 和 binlog 都还未写，故一致；重启后内存的新数据丢失，从磁盘载入旧数据，update 执行不生效
+- t2 时崩溃，符合情况 3，回滚事务，update 执行不生效
+- t3 时崩溃，符合情况 2，提交事务，update 执行生效
 
-
-
-
+可见，只要 redo log 写了 prepare 标识，且 binlog 正常写入了，此时更新操作就算生效了，后续的 commit 标识更新是否完成也不影响结果的。
 
 ## 死锁问题分析
 
