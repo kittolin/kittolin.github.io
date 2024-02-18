@@ -123,15 +123,18 @@ redo log 是物理日志，因为其是引擎内部日志，所以是没有 sql 
 这里你可能有疑问了：数据文件保存在磁盘，日志文件也是保存在磁盘，同样是写磁盘，为什么不直接写数据文件，还要多此一举呢？
 
 比如执行如下 update 语句：
+
 ```sql
 update account set money = money + 100 where user_id = 1;
 ```
+
 如果是直接写数据文件，首先要读磁盘找到 user_id = 1 的记录，更新 money 字段后，再写回磁盘，属于随机读写；
 如果是写日志文件，不用关心记录的具体位置，只需在日志文件后面追加日志，属于顺序写，磁盘的顺序写性能远大于随机写。
 
 只要写了 redo log 日志，更新就算完成了；InnoDB 会在适当的时候将日志的变更刷新到磁盘的数据文件里去。
 
 redo log 由多个文件组成，写过程类似于循环队列的循环写，如下图所示：
+
 - write pos 表示当前日志接下来要写的位置
 - check pos 表示已刷新到磁盘的日志的位置
 - 图中绿色部分表示接下来日志可以写入的，黄色部分表示已写入但还未刷新到磁盘的
@@ -148,6 +151,7 @@ binlog 是 Server 层实现的，故所有引擎都可以使用，用于记录�
 binlog 是逻辑日志，记录的是 sql 语句的原始逻辑，类似于 “给 user_id = 1 的记录的 money 字段加 100”。
 
 binlog 日志写磁盘的过程如下图所示：
+
 - 为了保证事务日志的原子性，每个线程都有其单独的 cache，在事务提交时，用 write 系统调用一次性刷到 page cache 去
 - 至于何时如何调用 fsync 写到磁盘，可通过 sync_binlog 参数配置
 
@@ -155,12 +159,12 @@ binlog 日志写磁盘的过程如下图所示：
 
 binlog 和 redo log 的对比如下：
 
-|       | redo log | binlog |
-| ---   | -------- | ------ |
-| 实现层 | InnoDB | Server |
-| 日志类型 | 物理日志 | 逻辑日志 |
-| 写机制 | 循环写 | 追加写 |
-| 用途 | 故障恢复 | 主从复制、备份还原 |
+|          | redo log | binlog             |
+| -------- | -------- | ------------------ |
+| 实现层   | InnoDB   | Server             |
+| 日志类型 | 物理日志 | 逻辑日志           |
+| 写机制   | 循环写   | 追加写             |
+| 用途     | 故障恢复 | 主从复制、备份还原 |
 
 ### 两阶段提交
 
@@ -171,12 +175,14 @@ update 语句主要做了三件事：更新 buffer pool，写 redo log，写 bin
 <img src="../../images/2024/01_sql_implement_deadlock/update_sql_exc.png" width="300">
 
 MySQL 重启后会去扫描 redo log 文件，分三种情况进行处理：
+
 - redo log 里面事务完整，即有 commit 标识，则直接提交（情况 1）
 - redo log 里面事务不完整，只有 prepare，则去判断对应的 binlog 是否完整存在
   - 若是，则提交事务（情况 2）
   - 否则，回滚事务（情况 3）
 
 假设 MySQL 分别在 update 执行过程中的各个中间时间点崩溃了，来分析下重启后是如何进行恢复的。
+
 - t1 时崩溃，redo log 和 binlog 都还未写，故一致；重启后内存的新数据丢失，从磁盘载入旧数据，update 执行不生效
 - t2 时崩溃，符合情况 3，回滚事务，update 执行不生效
 - t3 时崩溃，符合情况 2，提交事务，update 执行生效
@@ -185,18 +191,49 @@ MySQL 重启后会去扫描 redo log 文件，分三种情况进行处理：
 
 ## 死锁问题分析
 
-长事务意味着系统里面会存在很老的事务视图。由于这些事务随时可能访问数据库里面的任何数据，所以这个事务提交之前，数据库里面它可能用到的回滚记录都必须保留，这就会导致大量占用存储空间。
+1、引出死锁
+ERROR 1213 (40001): Deadlock found when trying to get lock; try restarting transaction
 
-可重复读的核心就是一致性读（consistent read）；而事务更新数据的时候，只能用当前读。如果当前的记录的行锁被其他事务占用的话，就需要进入锁等待。
+2、死锁介绍、死锁必要条件
 
-问题：
-undo log 如何实现
-高水位是事务创建时确定的，还是一直变的
+3、两阶段锁
+InnoDB 事务中，行锁是在需要时才加上的，而要等到事务结束时才释放。
+故若事务中需要锁多个行，要把最可能造成锁冲突的锁尽量往后放。
 
-两阶段锁
+4、四个例子
 
-笔记：
-幻读和间隙锁
-数据库锁
+8.0.30，可重复读，Innodb 引擎
+
+```sql
+select * from performance_schema.data_locks\G;
+```
+
+```sql
+create table `user_decoration` (
+  `id` int(11) auto_increment,
+  `user_id` int(11) comment '用户 id',
+  `decoration_id` int(11) comment '装饰 id',
+  `is_wear` tinyint(4) comment '是否佩戴',
+  primary key (`id`),
+  unique key `idx_user_id_decoration_id` (`user_id`, `decoration_id`)
+) comment '用户装饰表';
+
+insert into `user_decoration` (`user_id`, `decoration_id`, `is_wear`) values
+(1, 1, 1),
+(1, 2, 0),
+(1, 3, 0);
+
+update user_decoration set is_wear = 1 where user_id = 1 and decoration_id = 2;
+update user_decoration set is_wear = 0 where user_id = 1 and decoration_id != 2;
+
+update user_decoration set is_wear = 1 where user_id = 1 and decoration_id = 3;
+update user_decoration set is_wear = 0 where user_id = 1 and decoration_id != 3;
+```
+
+
+- 间隙锁和行锁合称 next-key lock，next-key lock 是前开后闭区间
+  (4) 间隙锁可能会导致死锁。例如：id=9 这行不存在，会加上间隙锁 (5, 10)
+
+5、总结
 
 ## 参考资料
