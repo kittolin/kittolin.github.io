@@ -198,9 +198,8 @@ ERROR 1213 (40001): Deadlock found when trying to get lock; try restarting trans
 
 3、两阶段锁
 InnoDB 事务中，行锁是在需要时才加上的，而要等到事务结束时才释放。
-故若事务中需要锁多个行，要把最可能造成锁冲突的锁尽量往后放。
 
-4、四个例子
+4、三个例子
 
 8.0.30，可重复读，Innodb 引擎
 
@@ -222,14 +221,82 @@ insert into `user_decoration` (`user_id`, `decoration_id`, `is_wear`) values
 (1, 1, 1),
 (1, 2, 0),
 (1, 3, 0);
+```
 
+<!-- original:
+transaction A
 update user_decoration set is_wear = 1 where user_id = 1 and decoration_id = 2;
 update user_decoration set is_wear = 0 where user_id = 1 and decoration_id != 2;
 
+transaction B
 update user_decoration set is_wear = 1 where user_id = 1 and decoration_id = 3;
 update user_decoration set is_wear = 0 where user_id = 1 and decoration_id != 3;
+
+
+hotfix:
+transaction A
+update user_decoration set is_wear = 0 where user_id = 1;
+update user_decoration set is_wear = 1 where user_id = 1 and decoration_id = 2;
+
+transaction B
+update user_decoration set is_wear = 0 where user_id = 1;
+update user_decoration set is_wear = 1 where user_id = 1 and decoration_id = 3; -->
+
+<img src="../../images/2024/01_sql_implement_deadlock/deadlock_1_original.png" width="600">
+
+<img src="../../images/2024/01_sql_implement_deadlock/deadlock_1_A_T2_gain_lock.png" width="400">
+
+<img src="../../images/2024/01_sql_implement_deadlock/deadlock_1_A_T4_block_lock.png" width="400">
+
+<img src="../../images/2024/01_sql_implement_deadlock/deadlock_1_hotfix.png" width="600">
+
+2.
+
+```sql
+create table `account` (
+  `id` int(11) comment '账户 id',
+  `money` int(11) comment '余额',
+  primary key (`id`)
+) comment '账户表';
+
+insert into `account` (`id`, `money`) values
+(1, 1000),
+(3, 3000);
 ```
 
+<!-- original
+transaction A
+update `account` set money=money - 100 where id = 1;
+update `account` set money=money + 100 where id = 3;
+
+transaction B
+update `account` set money=money - 300 where id = 3;
+update `account` set money=money + 300 where id = 1;
+
+
+hotfix
+transaction A
+update `account` set money=money - 100 where id = 1;
+update `account` set money=money + 100 where id = 3;
+
+transaction B
+update `account` set money=money + 300 where id = 1;
+update `account` set money=money - 300 where id = 3; -->
+
+<img src="../../images/2024/01_sql_implement_deadlock/deadlock_2_original.png" width="600">
+
+<img src="../../images/2024/01_sql_implement_deadlock/deadlock_2_A_T2_gain_lock.png" width="400">
+
+<img src="../../images/2024/01_sql_implement_deadlock/deadlock_2_A_T4_block_lock.png" width="400">
+
+<img src="../../images/2024/01_sql_implement_deadlock/deadlock_2_hotfix.png" width="600">
+
+3)
+```sql
+
+select * from `account` where id = 2 for update;
+insert into `account`(id, money) values (2, 2000);
+```
 
 - 间隙锁和行锁合称 next-key lock，next-key lock 是前开后闭区间
   (4) 间隙锁可能会导致死锁。例如：id=9 这行不存在，会加上间隙锁 (5, 10)
