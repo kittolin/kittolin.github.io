@@ -292,11 +292,28 @@ update `account` set money=money - 300 where id = 3; -->
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_2_hotfix.png" width="600">
 
 3)
-```sql
-
+<!-- ```sql
+original
 select * from `account` where id = 2 for update;
 insert into `account`(id, money) values (2, 2000);
-```
+
+hotfix
+insert ignore into `account`(id, money) values (2, 2000);
+``` -->
+
+<img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_original_current_read.png" width="600">
+
+<img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_original_current_B_T3_gain_lock.png" width="400">
+
+<img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_original_current_A_T4_block_lock.png" width="400">
+
+读提交，同 2
+
+<img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_original_view_read.png" width="600">
+
+<img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_original_view_B_T5_block_lock.png" width="400">
+
+<img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_hotfix.png" width="600">
 
 - 间隙锁和行锁合称 next-key lock，next-key lock 是前开后闭区间
   (4) 间隙锁可能会导致死锁。例如：id=9 这行不存在，会加上间隙锁 (5, 10)
