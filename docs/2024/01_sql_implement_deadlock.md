@@ -4,7 +4,7 @@ MySQL 应该是我们平时开发中用的最多的中间件了。它的 SQL 功
 
 本文主要分享 MySQL 中两个重要且巧妙的底层实现：事务的隔离性，update 语句的执行流程。这其中涉及到了 MySQL 的三大日志：binlog、redo log 和 undo log。这些日志是 MySQL 实现高性能和一致性的保证，也是组建主从和主备架构的前提基础。
 
-最后再分享几个常见的死锁问题。基于此，了解下 SQL 执行背后的加锁逻辑，以及可以如何通过日志来分析定位这些问题，在以后开发中如何规避。
+最后再分享几个死锁问题。基于此，了解下 SQL 执行背后的加锁逻辑，以及可以如何通过日志来分析定位这些问题，在以后开发中如何规避。
 
 首先，先来看一下 MySQL 的基础架构。
 
@@ -191,21 +191,36 @@ MySQL 重启后会去扫描 redo log 文件，分三种情况进行处理：
 
 ## 死锁问题分析
 
-1、引出死锁
-ERROR 1213 (40001): Deadlock found when trying to get lock; try restarting transaction
+平时使用 MySQL 过程中有可能遇到过这种错误：ERROR 1213 (40001): Deadlock found when trying to get lock; try restarting transaction。
 
-2、死锁介绍、死锁必要条件
+这是数据库多个并发事务之间发生了死锁。那么死锁是什么，如何发生的，以及如何规避呢？
 
-3、两阶段锁
-InnoDB 事务中，行锁是在需要时才加上的，而要等到事务结束时才释放。
+### 死锁是什么
 
-4、三个例子
+死锁是两个及以上并发操作在互相等待对方释放资源的情况下发生的一种阻塞状态。举个例子，有进程 A、B 都需要申请资源 1、2，A 已拥有 1，在申请 2；B 已拥有 2，在申请 1。A、B 互相阻塞，都无法往下执行，就发生了死锁。
 
-8.0.30，可重复读，Innodb 引擎
+死锁有以下四个必要条件，即如果发生了死锁，这四种情况一定存在：
 
-```sql
-select * from performance_schema.data_locks\G;
-```
+- 互斥条件：对互斥资源的争抢
+- 不剥夺条件：资源只能主动释放，不能被强行夺走
+- 请求和保持条件：进程请求的资源被其他占用，又对自己占用的资源保持不放
+- 循环等待条件：存在至少一种资源的循环等待链
+
+所以只要破坏了至少一个条件，就一定不会发生死锁。应用到 MySQL 上，前两个条件无法避免，可以通过破坏后两个条件来规避死锁的发生。
+
+在举例之前，还需要先了解下两个概念：两阶段锁和 next-key lock。
+
+- 两阶段锁：InnoDB 事务中，行锁是在需要时才加上的，而要等到事务结束时才统一释放
+- next-key lock
+  - 间隙锁：当某个事务获取了间隙锁，则锁定一个具体范围，其他事务无法在该范围内插入记录；多个事务可对同一范围同时加间隙锁；间隙锁只在可重复读级别下存在
+  - 间隙锁和行锁合称 next-key lock，是前开后闭区间。比如主键 id 上的 next-key lock (5, 10]，表示间隙锁 (5, 10)，以及 id=10 的行锁
+
+下面通过三个例子，来演示下 MySQL 中死锁的发生过程，以及如何规避。演示环境：MySQL 8.0.30，可重复读隔离级别，Innodb 引擎
+
+### 三个死锁例子
+
+1、用户佩戴装饰
+有一张用户装饰表，记录用户所拥有的装饰，以及正在佩戴的。每个用户可拥有多个装饰，但只能佩戴其中一个。当前表中用户 1 拥有装饰 1、2、3，且佩戴装饰 1。初始化数据如下：
 
 ```sql
 create table `user_decoration` (
@@ -222,6 +237,9 @@ insert into `user_decoration` (`user_id`, `decoration_id`, `is_wear`) values
 (1, 2, 0),
 (1, 3, 0);
 ```
+
+假设有并发事务 A、B，分别将用户 1 当前佩戴的装饰改成 2 和 3，执行序列如下所示，发生了死锁。
+<img src="../../images/2024/01_sql_implement_deadlock/deadlock_1_original.png" width="600">
 
 <!-- original:
 transaction A
@@ -242,11 +260,27 @@ transaction B
 update user_decoration set is_wear = 0 where user_id = 1;
 update user_decoration set is_wear = 1 where user_id = 1 and decoration_id = 3; -->
 
-<img src="../../images/2024/01_sql_implement_deadlock/deadlock_1_original.png" width="600">
+MySQL 中可以通过 data_locks 表来查看 sql 执行时加了哪些锁。重点看下 LOCK_MODE 字段：
 
+- X：next-key 锁，此时 LOCK_DATA 表示区间右端点
+- X, REC_NOT_GAP：行锁
+- X, GAP：间隙锁，此时 LOCK_DATA 表示区间右端点
+
+```sql
+select * from performance_schema.data_locks\G;
+```
+
+来看下事务 A T2 时刻执行的 sql 加了哪些锁。可以看到，除了在索引 idx_user_id_decoration_id 上加了 1,2 的行锁，还会回表在主键索引上加 id = 2 的行锁。主键上的锁不影响下面的分析，故不再提及。
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_1_A_T2_gain_lock.png" width="400">
 
+同理，事务 B T3 时刻在索引 idx_user_id_decoration_id 上加了 1,3 的行锁。
+
+再来看事务 A T4 时刻为什么会阻塞。可以看到，事务 A 在 waiting 事务 B 所占据的索引 idx_user_id_decoration_id 上的 1, 3 next-key 锁。
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_1_A_T4_block_lock.png" width="400">
+
+至此，发生死锁的原因可以解释了：
+- A 占据了装饰 2 的锁，在等装饰 3 的锁；
+- B 占据了装饰 3 的锁，在等装饰 2 的锁
 
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_1_hotfix.png" width="600">
 
@@ -291,15 +325,15 @@ update `account` set money=money - 300 where id = 3; -->
 
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_2_hotfix.png" width="600">
 
-3)
-<!-- ```sql
-original
-select * from `account` where id = 2 for update;
-insert into `account`(id, money) values (2, 2000);
+1.  <!-- ```sql
+    original
+    select * from `account` where id = 2 for update;
+    insert into `account`(id, money) values (2, 2000);
 
 hotfix
 insert ignore into `account`(id, money) values (2, 2000);
-``` -->
+
+```-->
 
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_original_current_read.png" width="600">
 
@@ -315,9 +349,10 @@ insert ignore into `account`(id, money) values (2, 2000);
 
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_hotfix.png" width="600">
 
-- 间隙锁和行锁合称 next-key lock，next-key lock 是前开后闭区间
+
   (4) 间隙锁可能会导致死锁。例如：id=9 这行不存在，会加上间隙锁 (5, 10)
 
 5、总结
 
 ## 参考资料
+```
