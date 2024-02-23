@@ -279,12 +279,24 @@ select * from performance_schema.data_locks\G;
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_1_A_T4_block_lock.png" width="400">
 
 至此，发生死锁的原因可以解释了：
+
 - A 占据了装饰 2 的锁，在等装饰 3 的锁；
 - B 占据了装饰 3 的锁，在等装饰 2 的锁
 
+那么，可以如何规避这个死锁的发生呢？
+
+如果是在一开始表设计阶段，可以考虑将这张表拆分成两张表：用户拥有的所有装饰，用户当前正在佩戴的装饰。
+这样事务 A、B 的业务逻辑就是更改第二张表的同一记录，只需争抢一个资源，破坏了请求和保持条件，自然不会发生死锁了。
+
+如果该表已在线上运行，可以在不变更表结构的前提下，通过改 sql 来避免吗？
+观察分析可以看到，A 和 B 在整个事务期间都需要同时获取用户 1 的所有装饰的锁的。
+那么是否可以在事务一开始就先占据所有需要的锁，后续就不会再因为请求锁而被阻塞，也就破坏了请求和保持条件。
+
+基于此想法，变更之后的 sql 如下，A 在 T2 时刻就同时占据了装饰 1、2、3 的锁，B 在 T3 时刻就只能阻塞，直到 A 提交事务释放锁。
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_1_hotfix.png" width="600">
 
-2.
+2、互相转账
+有一张账户表，用于存储用户的余额，转账采用转出者先扣费、转入者再入账的执行逻辑，初始数据如下：
 
 ```sql
 create table `account` (
@@ -317,23 +329,37 @@ transaction B
 update `account` set money=money + 300 where id = 1;
 update `account` set money=money - 300 where id = 3; -->
 
+现在用户 1 向 3 转账 100，3 向 1 转账 300，两个事务并发执行，发生了死锁。
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_2_original.png" width="600">
 
+还是通过 data_locks 表来查看加了哪些锁。
+可以看到，A 在 T2 时刻占据了主键上 id=1 的行锁，同理 B 在 T3 时刻占据了 id=3 的行锁。
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_2_A_T2_gain_lock.png" width="400">
 
+A 在 T4 时刻因为等待 id=3 的行锁而阻塞。
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_2_A_T4_block_lock.png" width="400">
 
+至此，死锁的原因就找到了：
+
+- A 占据 id=1 的锁，等待 id=3 的锁
+- B 占据 id=3 的锁，等待 id=1 的锁
+
+可以看到，A 是按 id 从小到大的顺序来获取锁的，而 B 是按反顺序来获取锁的，自然会出现循环互锁的情况。
+那么如果 A、B 都按相同顺序获取锁呢？后来事务会因所需的锁被先前事务占据而被阻塞，也就破坏了循环等待条件。
+
+基于此，只需把 B 的两条 sql 换下顺序就可以了，转账逻辑就变成了 id 越小的 sql 就越先执行。
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_2_hotfix.png" width="600">
 
-1.  <!-- ```sql
-    original
-    select * from `account` where id = 2 for update;
-    insert into `account`(id, money) values (2, 2000);
+3、
+
+<!-- ```sql
+original
+select * from `account` where id = 2 for update;
+insert into `account`(id, money) values (2, 2000);
 
 hotfix
 insert ignore into `account`(id, money) values (2, 2000);
-
-```-->
+``` -->
 
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_original_current_read.png" width="600">
 
@@ -341,18 +367,20 @@ insert ignore into `account`(id, money) values (2, 2000);
 
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_original_current_A_T4_block_lock.png" width="400">
 
-读提交，同 2
+去掉 for update
 
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_original_view_read.png" width="600">
 
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_original_view_B_T5_block_lock.png" width="400">
 
+读提交，同 2
+
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_hotfix.png" width="600">
-
-
-  (4) 间隙锁可能会导致死锁。例如：id=9 这行不存在，会加上间隙锁 (5, 10)
 
 5、总结
 
 ## 参考资料
+
+```
+
 ```
