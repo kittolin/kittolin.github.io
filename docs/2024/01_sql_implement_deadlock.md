@@ -350,8 +350,7 @@ A 在 T4 时刻因为等待 id=3 的行锁而阻塞。
 基于此，只需把 B 的两条 sql 换下顺序就可以了，转账逻辑就变成了 id 越小的 sql 就越先执行。
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_2_hotfix.png" width="600">
 
-3、
-
+3、账户表插入新用户
 <!-- ```sql
 original
 select * from `account` where id = 2 for update;
@@ -361,26 +360,36 @@ hotfix
 insert ignore into `account`(id, money) values (2, 2000);
 ``` -->
 
+还是例子 2 中的账户表，现有并发事务 A、B，同时判断表中是否存在 id 为 2 的用户，如果不存在则写入，执行 sql 如下，发生了死锁：
+（注意：for update 表示查询是当前读，会加锁；普通查询是快照读，不加锁）
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_original_current_read.png" width="600">
 
+查看 data_locks 表，事务 B 在 T3 时刻执行完后，事务 A 在主键 id 的 (1, 3) 上加了间隙锁，事务 B 也在 (1, 3) 上加了间隙锁，因为间隙锁之间互不冲突。
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_original_current_B_T3_gain_lock.png" width="400">
 
+事务 A 在 T4 时刻插入时被事务 B 的 (1, 3) 间隙锁所阻塞。
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_original_current_A_T4_block_lock.png" width="400">
 
-去掉 for update
+至此，死锁发生的原因找到了：
+- A 插入时被 B 的间隙锁阻塞
+- B 插入时被 A 的间隙锁阻塞
 
+如果 select 语句去掉 for update，也就是普通查询，则执行逻辑会有所不同：
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_original_view_read.png" width="600">
 
+原因在于普通查询不会加间隙锁，事务 B T5 时刻被事务 A 在 T4 时刻占据的 id=2 的行锁所阻塞，直到事务 A 提交释放锁，事务 B 才能往下执行，并报错唯一键冲突。
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_original_view_B_T5_block_lock.png" width="400">
 
-读提交，同 2
+上述的演示都是在可重复读级别下的，如果是读已提交级别，是不存在间隙锁的，不管是当前读还是快照读的演示，都是报唯一键冲突而不是死锁。
 
+如果即不想死锁也不想报唯一键冲突，可以采用 insert ignore 语句，该语句在不冲突时写入、冲突时直接忽略本次更改。
 <img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_hotfix.png" width="600">
 
-5、总结
+总结上面三个死锁例子，在规避死锁时可以采用这些思路：
+- 减少事务期间依赖的锁，可降低死锁概率，如果只需申请一个锁，则破坏了请求和保持条件，从而避免了死锁
+- 在事务一开始就申请所有所需的锁，破坏请求和保持条件（注意这种方式比较适合短事务，如果用于长事务，可能会让后续依赖相同的锁的短事务一直阻塞，导致饥饿超时）
+- 按同样的顺序去申请锁，破坏循环等待条件
 
 ## 参考资料
-
-```
-
-```
+- [MySQL 实战 45 讲](https://time.geekbang.org/column/intro/100020801?tab=catalog)
+- [事务隔离级别是怎么实现的？](https://xiaolincoding.com/mysql/transaction/mvcc.html)
