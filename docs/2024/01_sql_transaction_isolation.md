@@ -10,7 +10,7 @@ MySQL 应该是我们平时开发中用的最多的中间件了。它的 SQL 功
 
 MySQL 整体架构如下所示，主要包含两大组件：server 层和存储引擎层。
 
-<img src="../../images/2024/01_sql_implement_deadlock/mysql_arch.png" width="600">
+<img src="../../images/2024/01_sql_transaction_isolation/mysql_arch.png" width="600">
 
 server 层又包含多个组件，负责 SQL 的检查和解析，所有跨存储引擎的功能都在这一层实现。
 
@@ -37,7 +37,7 @@ select money from account where user_id = 1;
 update account set money = money + 100 where user_id = 1;
 ```
 
-<img src="../../images/2024/01_sql_implement_deadlock/concurrency_t_sample.png" width="400">
+<img src="../../images/2024/01_sql_transaction_isolation/concurrency_t_sample.png" width="400">
 
 分析下 S1 的取值，先给出结论：S1 = 100，可以从两个角度来看：
 
@@ -52,7 +52,7 @@ S2 的分析同 S1，结果也为 100；S3 是在事务 A 提交后，能看到 
 
 的确，在 MySQL 里面每一行记录是可以存在有多个版本的，每次变更都会重新生成一个新的版本，同时记录下此次变更所属的事务 ID，如下图所示：
 
-<img src="../../images/2024/01_sql_implement_deadlock/mvcc_diagram.png" width="500">
+<img src="../../images/2024/01_sql_transaction_isolation/mvcc_diagram.png" width="500">
 
 在具体实现上，MySQL 是通过 undo log 机制来模拟出多个版本的，上图的箭头 u1 和 u2 就是指的 undo log。
 
@@ -88,11 +88,11 @@ u1 和 u2 记录的内容可以分别理解为： 将 300 改为 100，将 400 �
 
 不妨假设事务 A、B、C 的事务 ID 分别为 31、32、30，有两个 ID 分别为 10、20 的活跃事务贯穿于整个期间，user_id = 1 的记录是由先前已提交的 ID 为 5 的事务创建的，则 A、B、C 的一致性视图如下所示：
 
-<img src="../../images/2024/01_sql_implement_deadlock/view_arr_at_start.png" width="700">
+<img src="../../images/2024/01_sql_transaction_isolation/view_arr_at_start.png" width="700">
 
 在 S1 查询前，已经有了 U1 和 U2 两次变更，则 user_id = 1 的记录当前存在有三个版本了：
 
-<img src="../../images/2024/01_sql_implement_deadlock/row_mvcc_sample.png" width="300">
+<img src="../../images/2024/01_sql_transaction_isolation/row_mvcc_sample.png" width="300">
 
 S1 的取值分析过程如下：
 
@@ -102,7 +102,7 @@ S1 的取值分析过程如下：
 
 S2 的分析同 S1。S3 查询时，事务 A 已提交，S3 单次查询也是个新事务，假设新事务 ID 为 33，视图如下所示：
 
-<img src="../../images/2024/01_sql_implement_deadlock/view_arr_after_commit.png" width="300">
+<img src="../../images/2024/01_sql_transaction_isolation/view_arr_after_commit.png" width="300">
 
 S3 的取值分析过程如下：
 

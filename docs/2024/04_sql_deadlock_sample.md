@@ -48,7 +48,7 @@ insert into `user_decoration` (`user_id`, `decoration_id`, `is_wear`) values
 ```
 
 假设有并发事务 A、B，分别将用户 1 当前佩戴的装饰改成 2 和 3，执行序列如下所示，发生了死锁。
-<img src="../../images/2024/01_sql_implement_deadlock/deadlock_1_original.png" width="600">
+<img src="../../images/2024/04_sql_deadlock_sample/deadlock_1_original.png" width="600">
 
 <!-- original:
 transaction A
@@ -80,12 +80,12 @@ select * from performance_schema.data_locks\G;
 ```
 
 来看下事务 A T2 时刻执行的 sql 加了哪些锁。可以看到，除了在索引 idx_user_id_decoration_id 上加了 1,2 的行锁，还会回表在主键索引上加 id = 2 的行锁。主键上的锁不影响下面的分析，故不再提及。
-<img src="../../images/2024/01_sql_implement_deadlock/deadlock_1_A_T2_gain_lock.png" width="400">
+<img src="../../images/2024/04_sql_deadlock_sample/deadlock_1_A_T2_gain_lock.png" width="400">
 
 同理，事务 B T3 时刻在索引 idx_user_id_decoration_id 上加了 1,3 的行锁。
 
 再来看事务 A T4 时刻为什么会阻塞。可以看到，事务 A 在 waiting 事务 B 所占据的索引 idx_user_id_decoration_id 上的 1, 3 next-key 锁。
-<img src="../../images/2024/01_sql_implement_deadlock/deadlock_1_A_T4_block_lock.png" width="400">
+<img src="../../images/2024/04_sql_deadlock_sample/deadlock_1_A_T4_block_lock.png" width="400">
 
 至此，发生死锁的原因可以解释了：
 
@@ -102,7 +102,7 @@ select * from performance_schema.data_locks\G;
 那么是否可以在事务一开始就先占据所有需要的锁，后续就不会再因为请求锁而被阻塞，也就破坏了请求和保持条件。
 
 基于此想法，变更之后的 sql 如下，A 在 T2 时刻就同时占据了装饰 1、2、3 的锁，B 在 T3 时刻就只能阻塞，直到 A 提交事务释放锁。
-<img src="../../images/2024/01_sql_implement_deadlock/deadlock_1_hotfix.png" width="600">
+<img src="../../images/2024/04_sql_deadlock_sample/deadlock_1_hotfix.png" width="600">
 
 ## 互相转账
 有一张账户表，用于存储用户的余额，转账采用转出者先扣费、转入者再入账的执行逻辑，初始数据如下：
@@ -139,14 +139,14 @@ update `account` set money=money + 300 where id = 1;
 update `account` set money=money - 300 where id = 3; -->
 
 现在用户 1 向 3 转账 100，3 向 1 转账 300，两个事务并发执行，发生了死锁。
-<img src="../../images/2024/01_sql_implement_deadlock/deadlock_2_original.png" width="600">
+<img src="../../images/2024/04_sql_deadlock_sample/deadlock_2_original.png" width="600">
 
 还是通过 data_locks 表来查看加了哪些锁。
 可以看到，A 在 T2 时刻占据了主键上 id=1 的行锁，同理 B 在 T3 时刻占据了 id=3 的行锁。
-<img src="../../images/2024/01_sql_implement_deadlock/deadlock_2_A_T2_gain_lock.png" width="400">
+<img src="../../images/2024/04_sql_deadlock_sample/deadlock_2_A_T2_gain_lock.png" width="400">
 
 A 在 T4 时刻因为等待 id=3 的行锁而阻塞。
-<img src="../../images/2024/01_sql_implement_deadlock/deadlock_2_A_T4_block_lock.png" width="400">
+<img src="../../images/2024/04_sql_deadlock_sample/deadlock_2_A_T4_block_lock.png" width="400">
 
 至此，死锁的原因就找到了：
 
@@ -157,7 +157,7 @@ A 在 T4 时刻因为等待 id=3 的行锁而阻塞。
 那么如果 A、B 都按相同顺序获取锁呢？后来事务会因所需的锁被先前事务占据而被阻塞，也就破坏了循环等待条件。
 
 基于此，只需把 B 的两条 sql 换下顺序就可以了，转账逻辑就变成了 id 越小的 sql 就越先执行。
-<img src="../../images/2024/01_sql_implement_deadlock/deadlock_2_hotfix.png" width="600">
+<img src="../../images/2024/04_sql_deadlock_sample/deadlock_2_hotfix.png" width="600">
 
 ## 账户表插入新用户
 <!-- ```sql
@@ -171,28 +171,28 @@ insert ignore into `account`(id, money) values (2, 2000);
 
 还是例子 2 中的账户表，现有并发事务 A、B，同时判断表中是否存在 id 为 2 的用户，如果不存在则写入，执行 sql 如下，发生了死锁：
 （注意：for update 表示查询是当前读，会加锁；普通查询是快照读，不加锁）
-<img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_original_current_read.png" width="600">
+<img src="../../images/2024/04_sql_deadlock_sample/deadlock_3_original_current_read.png" width="600">
 
 查看 data_locks 表，事务 B 在 T3 时刻执行完后，事务 A 在主键 id 的 (1, 3) 上加了间隙锁，事务 B 也在 (1, 3) 上加了间隙锁，因为间隙锁之间互不冲突。
-<img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_original_current_B_T3_gain_lock.png" width="400">
+<img src="../../images/2024/04_sql_deadlock_sample/deadlock_3_original_current_B_T3_gain_lock.png" width="400">
 
 事务 A 在 T4 时刻插入时被事务 B 的 (1, 3) 间隙锁所阻塞。
-<img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_original_current_A_T4_block_lock.png" width="400">
+<img src="../../images/2024/04_sql_deadlock_sample/deadlock_3_original_current_A_T4_block_lock.png" width="400">
 
 至此，死锁发生的原因找到了：
 - A 插入时被 B 的间隙锁阻塞
 - B 插入时被 A 的间隙锁阻塞
 
 如果 select 语句去掉 for update，也就是普通查询，则执行逻辑会有所不同：
-<img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_original_view_read.png" width="600">
+<img src="../../images/2024/04_sql_deadlock_sample/deadlock_3_original_view_read.png" width="600">
 
 原因在于普通查询不会加间隙锁，事务 B T5 时刻被事务 A 在 T4 时刻占据的 id=2 的行锁所阻塞，直到事务 A 提交释放锁，事务 B 才能往下执行，并报错唯一键冲突。
-<img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_original_view_B_T5_block_lock.png" width="400">
+<img src="../../images/2024/04_sql_deadlock_sample/deadlock_3_original_view_B_T5_block_lock.png" width="400">
 
 上述的演示都是在可重复读级别下的，如果是读已提交级别，是不存在间隙锁的，不管是当前读还是快照读的演示，都是报唯一键冲突而不是死锁。
 
 如果即不想死锁也不想报唯一键冲突，可以采用 insert ignore 语句，该语句在不冲突时写入、冲突时直接忽略本次更改。
-<img src="../../images/2024/01_sql_implement_deadlock/deadlock_3_hotfix.png" width="600">
+<img src="../../images/2024/04_sql_deadlock_sample/deadlock_3_hotfix.png" width="600">
 
 总结上面三个死锁例子，在规避死锁时可以采用这些思路：
 - 减少事务期间依赖的锁，可降低死锁概率，如果只需申请一个锁，则破坏了请求和保持条件，从而避免了死锁

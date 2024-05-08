@@ -29,7 +29,7 @@ redo log 由多个文件组成，写过程类似于循环队列的循环写，�
 - check pos 表示已刷新到磁盘的日志的位置
 - 图中绿色部分表示接下来日志可以写入的，黄色部分表示已写入但还未刷新到磁盘的
 
-<img src="../../images/2024/01_sql_implement_deadlock/redo_log_curcle_write.png" width="300">
+<img src="../../images/2024/03_sql_update_process/redo_log_curcle_write.png" width="300">
 
 在具体实现上，日志是先写到 buffer 的，可配置相关参数，在事务提交时将 buffer 日志刷到磁盘去；
 此外，InnoDB 还有个后台线程，定时刷 buffer 到磁盘。
@@ -45,7 +45,7 @@ binlog 日志写磁盘的过程如下图所示：
 - 为了保证事务日志的原子性，每个线程都有其单独的 cache，在事务提交时，用 write 系统调用一次性刷到 page cache 去
 - 至于何时如何调用 fsync 写到磁盘，可通过 sync_binlog 参数配置
 
-<img src="../../images/2024/01_sql_implement_deadlock/binlog_to_disk.png" width="400">
+<img src="../../images/2024/03_sql_update_process/binlog_to_disk.png" width="400">
 
 binlog 和 redo log 的对比如下：
 
@@ -62,7 +62,7 @@ update 语句主要做了三件事：更新 buffer pool，写 redo log，写 bin
 
 由于 redo log 和 binlog 是两个独立的逻辑，为了保证日志和数据的一致性，MySQL 采用了两阶段提交机制，具体流程如下图所示：
 
-<img src="../../images/2024/01_sql_implement_deadlock/update_sql_exc.png" width="300">
+<img src="../../images/2024/03_sql_update_process/update_sql_exc.png" width="300">
 
 MySQL 重启后会去扫描 redo log 文件，分三种情况进行处理：
 
